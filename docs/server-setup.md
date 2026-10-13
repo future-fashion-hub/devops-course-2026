@@ -89,7 +89,11 @@ UFW активен.
 
 ## 9. Контейнеризация
 
-Docker Engine установлен из официального APT-репозитория Docker для Ubuntu Noble.
+Docker Engine 29.9.0 установлен из официального APT-репозитория Docker для Ubuntu Noble.
+Плагин Docker Compose: v5.6.0. Проверено командами docker version и docker compose version.
+Участник группы docker: devops (getent group docker).
+Проект расположен в /home/devops/app, файл переменных — /home/devops/app/.env,
+владелец devops, права 600.
 
 ```bash
 sudo apt update
