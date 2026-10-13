@@ -50,6 +50,16 @@ echo "[3] Учётные записи"
 
 awk -F: '$3>=1000 && $3<65534 {printf " %s (uid=%s)\n",$1,$3}' /etc/passwd
 
+echo "[4] Веб-сервер"
+check "Nginx активен" "active" "$(systemctl is-active nginx)"
+check "HTTP перенаправляет на HTTPS" "301" "$(curl -s -o /dev/null -w '%{http_code}' http://devops.local/)"
+check "HTTPS проверяет сертификат" "200" "$(curl -s --cacert /home/devops/devops.crt -o /dev/null -w '%{http_code}' https://devops.local/)"
+check "Конфигурация Nginx корректна" "yes" "$(sudo nginx -t >/dev/null 2>&1 && echo yes || echo no)"
+echo "[5] Контейнеризация"
+check "Docker активен" "active" "$(systemctl is-active docker)"
+check "PostgreSQL healthy" "healthy" "$(docker inspect -f '{{.State.Health.Status}}' app-db-1 2>/dev/null)"
+check "Порты 5000 и 5432 не открыты во внешнюю сеть" "yes" "$(ss -H -tln | awk '$4 ~ /:(5000|5432)$/ && $4 !~ /^127\.0\.0\.1:/ {bad=1} END {print bad ? "no" : "yes"}')"
+check "Права .env равны 600" "600" "$(stat -c '%a' /home/devops/app/.env)"
 echo "Пройдено: $PASS, не пройдено: $FAIL"
 
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1
