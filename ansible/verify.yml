@@ -1,0 +1,34 @@
+---
+- name: Audit devops VM without changes
+  hosts: vm
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Read effective SSH configuration
+      ansible.builtin.command: sshd -T
+      changed_when: false
+      register: effective_ssh
+    - name: Assert SSH password and root login disabled
+      ansible.builtin.assert:
+        that:
+          - "'passwordauthentication no' in effective_ssh.stdout_lines"
+          - "'permitrootlogin no' in effective_ssh.stdout_lines"
+    - name: Inspect application container
+      community.docker.docker_container_info:
+        name: "{{ app_container_name }}"
+      register: app_info
+    - name: Assert application running
+      ansible.builtin.assert:
+        that:
+          - app_info.exists
+          - app_info.container.State.Running
+    - name: Read application health
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ app_host_port }}/health"
+        return_content: true
+      register: audit_health
+    - name: Assert application healthy
+      ansible.builtin.assert:
+        that:
+          - audit_health.status == 200
+          - audit_health.json.status == 'ok'

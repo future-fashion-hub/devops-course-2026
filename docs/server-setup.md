@@ -166,3 +166,60 @@ scripts/audit.sh
 docker compose down сохраняет том; down -v удаляет учебные данные и используется
 только в отдельном тесте сброса счётчика. Итоговые контейнеры, том и снимки 04-nginx-https,
 05-docker-compose сохранены.
+
+### Образ GHCR и подготовка автоматического деплоя
+
+CI-проект: https://github.com/future-fashion-hub/devops-ci-app.
+Образ `ghcr.io/future-fashion-hub/devops-ci-app`, проверенный полный SHA
+`1175641fa215a72e2649cae2669d223be56de69f`.
+Пакет публичный, серверу не требуется токен для чтения. Образ уже прошёл
+lint, pytest, сборку, smoke-test и самостоятельный запуск на ВМ.
+Для воспроизводимости используется SHA, а не изменяемый `latest`.
+
+## 10. Ansible
+
+Управляющий узел — Ubuntu 24.04 в WSL 2. Рабочая копия находится в
+`/home/student/course-repo`, проект — `ansible/`.
+Диск WSL расположен на D. Управляемый узел — существующая
+`devops-vm`, Ubuntu Server 24.04 amd64, после возврата к `01-clean-install`.
+Перед возвратом сохранён снимок `08-before-ansible` с прежними работами.
+Host-only адрес `192.168.56.101`, SSH порт 22.
+
+`inventory/bootstrap.ini` использует student для первичной настройки.
+`inventory/prod.ini` использует devops и существующий SSH-ключ
+`~/.ssh/devops_vm` с правами 0600. Зашифрованный ключ загружается через
+`ssh-add` в ssh-agent; закрытый ключ и парольная фраза в Git не хранятся.
+После установки ключа парольная аутентификация отключается.
+
+Роли выполняются в порядке `base`, `ssh`, `nginx`, `app`.
+base проверяет платформу, устанавливает зависимости и Docker из официального
+репозитория. ssh создаёт devops, ключ, sudoers, hardening и UFW.
+nginx настраивает reverse proxy; handlers сначала проверяют nginx -t,
+затем выполняют reload. app загружает проверенный SHA из GHCR, управляет
+контейнером devops-ci-app и ожидает успешный /health.
+
+Приложение публикуется только на `127.0.0.1:5000`, внешний вход через Nginx
+на порту 80. Health endpoint: `http://192.168.56.101/health`.
+UFW разрешает 22 и 80; привязка контейнера к loopback исключает обход Nginx.
+В `ansible.cfg` включены host_key_checking и force_handlers.
+
+Команды выполняются из `ansible/`:
+
+```sh
+ansible-galaxy collection install -r requirements.yml
+ansible-inventory -i inventory/bootstrap.ini --graph
+ansible-inventory --graph
+ansible-playbook -i inventory/bootstrap.ini site.yml --syntax-check
+ansible-playbook site.yml --syntax-check
+ansible-playbook -i inventory/bootstrap.ini site.yml --ask-pass --ask-become-pass
+ssh-add ~/.ssh/devops_vm
+ansible all -m ping
+ansible-playbook site.yml
+ansible-playbook verify.yml
+curl --fail http://192.168.56.101/health
+```
+
+Повторный запуск должен завершаться changed=0 и failed=0. Drift исправляется
+основным site.yml. Недоступный новый тег должен остановить pull до изменения
+контейнера, сохранив работающую версию. verify.yml только читает SSH-настройки,
+состояние контейнера и health endpoint; он не исправляет нарушения.
